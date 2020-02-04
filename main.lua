@@ -6,7 +6,7 @@ inspect = require "lib.inspect"
 tween = require "lib.tween"
 require "gamestates/game"
 
-mainFont = love.graphics.newFont("assets/Delicious.ttf", 20) 
+mainFont = love.graphics.newFont("assets/NovaMono-Regular.ttf", 20) 
 camera = Camera(0, 0)
 camera.scale = 10
 

@@ -13,6 +13,7 @@ local RADIUS = 10
 local radius = RADIUS
 local ticks
 local score = 0
+local note_count
 
 function game:init()
 
@@ -20,16 +21,29 @@ end
 
 function game:enter(previous, songname)
   print(songname)
-  midiFile = io.open(SONGDIR .. songname .. ".mid", "rb")
-  soundFile = SONGDIR .. songname .. ".mp3"
-  if io.open(soundFile) == nil then soundFile = SONGDIR .. songname .. ".mid" end
+  local midiFile = love.filesystem.newFile(SONGDIR .. songname .. ".mid", "r")
+  local soundFilePath = SONGDIR .. songname .. ".mp3"
+  local soundFile
+  -- play midi if mp3 not available
+  if love.filesystem.getInfo(soundFilePath) then 
+    soundFile = love.filesystem.newFile(soundFilePath, "r")
+  else
+    soundFile = midiFile 
+  end
   source = love.audio.newSource(soundFile, "stream")
-  midi_score = Midi.midi2ms_score(midiFile:read("*a"))
+  midi_score = Midi.midi2ms_score(midiFile:read())
   -- print(inspect(midi_score))
   -- print(inspect(Midi.score2stats(midi_score)))
   ticks = midi_score[1]
   print(ticks)
   notes = midi_score[3]
+  note_count = 0 -- for scoring
+  for i, v in ipairs(notes) do
+    if v[1] == "note" then
+      note_count = note_count + 1
+    end
+  end
+  print(note_count)
   table.sort(notes, function (e1,e2) return e1[2]<e2[2] end) -- sort by start time
   -- print(inspect(notes))
   source:play()
@@ -59,19 +73,16 @@ function game:update(dt)
   duration = source:tell()
   if current_note < #notes then
     -- {'note', start_time, duration, channel, pitch, velocity}
-    -- local note = notes[current_note]
     -- print(inspect(note))
     while current_note < #notes and notes[current_note][2] / ticks * current_tempo < duration + BEAT_EFFECT_DURATION do
       local event_type = notes[current_note][1]
       -- print(inspect(notes[current_note]))
-      if event_type == 'note' then --and notes[current_note][5] <= 52 then
+      if event_type == 'note' then
         -- add effect to signify upcoming note
         local begin = { radius=30, opacity=0.0, timestamp=duration + BEAT_EFFECT_DURATION }
-        -- table.insert(beatEffects, {val=begin, tween=tween.new(BEAT_EFFECT_DURATION, begin, { radius = RADIUS, opacity=1.0 }, tween.easing.outSine)})
-        -- effect_pool_index = (effect_pool_index) % EFFECT_POOL_SIZE + 1
         beatEffects:push_right({
           val=begin,
-          tween=tween.new(BEAT_EFFECT_DURATION, begin, { radius = RADIUS, opacity=1.0 }, tween.easing.outSine)
+          tween=tween.new(BEAT_EFFECT_DURATION + 0.1, begin, { radius = RADIUS-1, opacity=1.0 }, tween.easing.linear) -- I tweaked some values here to make it look better
         })
         -- print(inspect(notes[current_note]))
       elseif event_type == "set_tempo" then
@@ -86,23 +97,27 @@ function game:update(dt)
     if v.tween:update(dt) then
       -- assumes all effects will end in order
       beatEffects:pop_left()
+      -- counts as a missed note in addition to hitting early
+      drumEffect.tween = redEffect
+      drumEffect.tween:set(DRUM_EFFECT_DURATION)
     end
   end
   clickEffect.tween:update(dt)
   drumEffect.tween:update(-dt)
-  -- print(inspect(drumEffect.val.color))
 end
 
 function game:mousepressed(x,y, mouse_btn)
-  -- table.insert(mouseEvents, {x, y, duration})
   local greenThresh = 0.1
   local yellowThresh = 0.2
-  if beatEffects:length() ~= 0 then
+  local redThresh = 0.3 -- if tap should count
+  if beatEffects:length() ~= 0 and duration > beatEffects:peek_left().val.timestamp - redThresh then
     next_note = beatEffects:pop_left().val
     if duration > next_note.timestamp - greenThresh then
       drumEffect.tween = greenEffect
+      score = score + 1 / note_count * 100000.0
     elseif duration > next_note.timestamp - yellowThresh then
       drumEffect.tween = yellowEffect
+      score = score + 0.5 / note_count * 100000.0
     else
       drumEffect.tween = redEffect
     end
@@ -112,8 +127,10 @@ function game:mousepressed(x,y, mouse_btn)
 end
 
 function game:draw(dt)
-  love.graphics.print("duration: " .. duration)
-  -- love.graphics.print("duration: " .. duration)
+  love.graphics.print(duration .. "s")
+  score_int = math.floor(score)
+  score_str = string.rep('0', 7 - string.len(score_int)) .. score_int
+  love.graphics.printf(score_str,0,0,love.graphics.getWidth(),"right")
   camera:attach()
   for v in beatEffects:iter_right() do
     if v.tween.clock < v.tween.duration then
