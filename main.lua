@@ -14,5 +14,5 @@ function love.load()
   print(_VERSION)
   love.graphics.setFont(mainFont)
   Gamestate.registerEvents()
-  Gamestate.switch(game)
+  Gamestate.switch(game, "Beethoven-Moonlight-Sonata")
 end
