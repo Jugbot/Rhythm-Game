@@ -1,7 +1,5 @@
-game = {}
 local Midi = require ('lib.MIDI')
 local deque = require 'lib.deque'
-local SONGDIR = "songs/"
 local current_song
 local duration
 local lastNote
@@ -15,12 +13,35 @@ local ticks
 local score = 0
 local note_count
 
-function game:init()
+local game = {}
 
+function game:init()
+  
+end
+
+local function flattenTrack(track)
+  local last_time = -1
+  -- {'note', start_time, duration, channel, pitch, velocity}
+  for i, t in ipairs(track) do
+    -- print(inspect(t))
+    if t[1] == 'note' then
+      local _start = t[2]
+      local _end = t[3] + _start
+      if _start <= last_time then
+        t[1] = '' -- dont read
+      else
+        last_time = _end
+      end
+    end
+  end
+
+  return track
 end
 
 function game:enter(previous, songname)
+  if not songname then return end
   print(songname)
+  game.previous = previous
   local midiFile = love.filesystem.newFile(SONGDIR .. songname .. ".mid", "r")
   local soundFilePath = SONGDIR .. songname .. ".mp3"
   local soundFile
@@ -28,29 +49,41 @@ function game:enter(previous, songname)
   if love.filesystem.getInfo(soundFilePath) then 
     soundFile = love.filesystem.newFile(soundFilePath, "r")
   else
-    soundFile = midiFile 
+    soundFile = midiFile
   end
   source = love.audio.newSource(soundFile, "stream")
+  -- print(midiFile:getFilename())
   midi_score = Midi.midi2ms_score(midiFile:read())
+  -- midi_score = Midi.midi2opus(midiFile:read())
+  -- midi_score = Midi.midi2score(midiFile:read())
+  -- for i=-18, 18 do
+  --   print(inspect(midi_score[i]))
+  -- end
   -- print(inspect(midi_score))
   -- print(inspect(Midi.score2stats(midi_score)))
   ticks = midi_score[1]
-  print(ticks)
-  notes = midi_score[3]
+  -- print(ticks)
+  notes = flattenTrack(midi_score[#midi_score])
   note_count = 0 -- for scoring
   for i, v in ipairs(notes) do
     if v[1] == "note" then
       note_count = note_count + 1
     end
   end
-  print(note_count)
+  -- print(note_count)
   table.sort(notes, function (e1,e2) return e1[2]<e2[2] end) -- sort by start time
-  -- print(inspect(notes))
+  print(inspect(notes))
   source:play()
   current_song = songname
   duration = 0
   current_note = 1
   start = love.timer.getTime()
+end
+
+function game:leave()
+  if source and source:isPlaying() then
+    source:stop()
+  end
 end
 
 local beatEffects = deque.new()
@@ -68,8 +101,11 @@ local DRUM_EFFECT_DURATION = 0.2
 local greenEffect = tween.new(DRUM_EFFECT_DURATION, drumeEffectVal, {color={0.5,1,0.5}}, tween.easing.linear)
 local yellowEffect = tween.new(DRUM_EFFECT_DURATION, drumeEffectVal, {color={0.5,1,1}}, tween.easing.linear)
 local redEffect = tween.new(DRUM_EFFECT_DURATION, drumeEffectVal, {color= {1,0.5,0.5}}, tween.easing.linear) 
-local drumEffect = {val=drumeEffectVal, tween=tween.new(1, drumeEffectVal, drumeEffectVal)}
+local drumEffect = { val=drumeEffectVal, tween=tween.new(1, drumeEffectVal, drumeEffectVal) }
 function game:update(dt)
+  if not source:isPlaying() then
+    Gamestate.switch(game.previous)
+  end
   duration = source:tell()
   if current_note < #notes then
     -- {'note', start_time, duration, channel, pitch, velocity}
@@ -142,3 +178,5 @@ function game:draw(dt)
   love.graphics.circle("fill", 0, 0, clickEffect.val.radius)
   camera:detach()
 end
+
+return game
